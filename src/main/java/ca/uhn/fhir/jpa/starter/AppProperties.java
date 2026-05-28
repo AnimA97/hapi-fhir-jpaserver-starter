@@ -5,7 +5,7 @@ import ca.uhn.fhir.jpa.api.config.JpaStorageSettings;
 import ca.uhn.fhir.jpa.api.config.JpaStorageSettings.ClientIdStrategyEnum;
 import ca.uhn.fhir.jpa.api.config.JpaStorageSettings.IdStrategyEnum;
 import ca.uhn.fhir.jpa.model.entity.NormalizedQuantitySearchLevel;
-import ca.uhn.fhir.jpa.starter.ig.ExtendedPackageInstallationSpec;
+import ca.uhn.fhir.jpa.packages.PackageInstallationSpec;
 import ca.uhn.fhir.rest.api.EncodingEnum;
 import org.hl7.fhir.r4.model.Bundle;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -61,7 +61,15 @@ public class AppProperties {
 	private Boolean filter_search_enabled = true;
 	private Boolean graphql_enabled = false;
 	private Boolean binary_storage_enabled = false;
-	private Integer inline_resource_storage_below_size = 0;
+
+	public enum BinaryStorageMode {
+		DATABASE,
+		FILESYSTEM
+	}
+
+	private BinaryStorageMode binary_storage_mode = BinaryStorageMode.DATABASE;
+	private String binary_storage_filesystem_base_directory;
+	private Integer binary_storage_minimum_binary_size;
 	private Boolean bulk_export_enabled = false;
 	private Boolean bulk_import_enabled = false;
 	private Boolean default_pretty_print = true;
@@ -90,7 +98,7 @@ public class AppProperties {
 	private Boolean install_transitive_ig_dependencies = true;
 
 	private List<String> install_additional_resources_from_ig_folders = new ArrayList<>();
-	private Map<String, ExtendedPackageInstallationSpec> implementationGuides = null;
+	private Map<String, PackageInstallationSpec> implementationGuides = null;
 	private String custom_content_path = null;
 	private String app_content_path = null;
 	private Boolean lastn_enabled = false;
@@ -118,6 +126,22 @@ public class AppProperties {
 	private Map<String, RemoteSystem> remote_terminology_service = null;
 	private Boolean match_url_cache_enabled = false;
 	private Boolean index_storage_optimized = false;
+	private Boolean mark_resources_for_reindexing_upon_search_parameter_change = true;
+	private Integer reindex_thread_count = null;
+	private Integer expunge_thread_count = null;
+	private Elasticsearch elasticsearch = null;
+
+	private Integer bulk_export_file_retention_period_hours = 2;
+
+	private boolean allow_database_validation_override = false;
+
+	public boolean getAllow_database_validation_override() {
+		return allow_database_validation_override;
+	}
+
+	public void setAllow_database_validation_override(boolean allow_database_validation_override) {
+		this.allow_database_validation_override = allow_database_validation_override;
+	}
 
 	public List<String> getCustomInterceptorClasses() {
 		return custom_interceptor_classes;
@@ -159,11 +183,11 @@ public class AppProperties {
 		this.defer_indexing_for_codesystems_of_size = defer_indexing_for_codesystems_of_size;
 	}
 
-	public Map<String, ExtendedPackageInstallationSpec> getImplementationGuides() {
+	public Map<String, PackageInstallationSpec> getImplementationGuides() {
 		return implementationGuides;
 	}
 
-	public void setImplementationGuides(Map<String, ExtendedPackageInstallationSpec> implementationGuides) {
+	public void setImplementationGuides(Map<String, PackageInstallationSpec> implementationGuides) {
 		this.implementationGuides = implementationGuides;
 	}
 
@@ -483,12 +507,28 @@ public class AppProperties {
 		this.binary_storage_enabled = binary_storage_enabled;
 	}
 
-	public Integer getInline_resource_storage_below_size() {
-		return inline_resource_storage_below_size;
+	public BinaryStorageMode getBinary_storage_mode() {
+		return binary_storage_mode;
 	}
 
-	public void setInline_resource_storage_below_size(Integer inline_resource_storage_below_size) {
-		this.inline_resource_storage_below_size = inline_resource_storage_below_size;
+	public void setBinary_storage_mode(BinaryStorageMode binary_storage_mode) {
+		this.binary_storage_mode = binary_storage_mode;
+	}
+
+	public String getBinary_storage_filesystem_base_directory() {
+		return binary_storage_filesystem_base_directory;
+	}
+
+	public void setBinary_storage_filesystem_base_directory(String binary_storage_filesystem_base_directory) {
+		this.binary_storage_filesystem_base_directory = binary_storage_filesystem_base_directory;
+	}
+
+	public Integer getBinary_storage_minimum_binary_size() {
+		return binary_storage_minimum_binary_size;
+	}
+
+	public void setBinary_storage_minimum_binary_size(Integer binary_storage_minimum_binary_size) {
+		this.binary_storage_minimum_binary_size = binary_storage_minimum_binary_size;
 	}
 
 	public Boolean getBulk_export_enabled() {
@@ -785,6 +825,32 @@ public class AppProperties {
 		index_storage_optimized = theIndex_storage_optimized;
 	}
 
+	public boolean getMark_resources_for_reindexing_upon_search_parameter_change() {
+		return defaultIfNull(mark_resources_for_reindexing_upon_search_parameter_change, true);
+	}
+
+	public void setMark_resources_for_reindexing_upon_search_parameter_change(
+			Boolean mark_resources_for_reindexing_upon_search_parameter_change) {
+		this.mark_resources_for_reindexing_upon_search_parameter_change =
+				mark_resources_for_reindexing_upon_search_parameter_change;
+	}
+
+	public Integer getReindex_thread_count() {
+		return reindex_thread_count;
+	}
+
+	public void setReindex_thread_count(Integer reindex_thread_count) {
+		this.reindex_thread_count = reindex_thread_count;
+	}
+
+	public Integer getExpunge_thread_count() {
+		return expunge_thread_count;
+	}
+
+	public void setExpunge_thread_count(Integer expunge_thread_count) {
+		this.expunge_thread_count = expunge_thread_count;
+	}
+
 	public JpaStorageSettings.StoreMetaSourceInformationEnum getStore_meta_source_information() {
 		return store_meta_source_information;
 	}
@@ -794,12 +860,54 @@ public class AppProperties {
 		this.store_meta_source_information = store_meta_source_information;
 	}
 
+	public Elasticsearch getElasticsearch() {
+		return elasticsearch;
+	}
+
+	public void setElasticsearch(Elasticsearch elasticsearch) {
+		this.elasticsearch = elasticsearch;
+	}
+
+	public Integer getBulk_export_file_retention_period_hours() {
+		return bulk_export_file_retention_period_hours;
+	}
+
+	public void setBulk_export_file_retention_period_hours(Integer bulk_export_file_retention_period_hours) {
+		this.bulk_export_file_retention_period_hours = bulk_export_file_retention_period_hours;
+	}
+
 	public static class Cors {
-		private Boolean allow_Credentials = true;
+		private static final List<String> DEFAULT_ALLOWED_HEADERS = List.of(
+				"Origin",
+				"Accept",
+				"Content-Type",
+				"Authorization",
+				"Cache-Control",
+				"If-Match",
+				"If-None-Match",
+				"x-fhir-starter",
+				"X-Requested-With",
+				"Prefer");
+		private static final List<String> DEFAULT_EXPOSED_HEADERS = List.of(
+				"Location",
+				"Content-Location",
+				"ETag",
+				"Date",
+				"Retry-After",
+				"X-Correlation-Id",
+				"X-Progress",
+				"X-Request-Id");
+		private static final List<String> DEFAULT_ALLOWED_METHODS =
+				List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD");
+
+		private Boolean allow_Credentials = false;
 		private List<String> allowed_origin = List.of("*");
+		private List<String> allowed_headers = DEFAULT_ALLOWED_HEADERS;
+		private List<String> exposed_headers = DEFAULT_EXPOSED_HEADERS;
+		private List<String> allowed_methods = DEFAULT_ALLOWED_METHODS;
 
 		public List<String> getAllowed_origin() {
-			return allowed_origin;
+			return defaultIfNull(allowed_origin, List.of("*"));
 		}
 
 		public void setAllowed_origin(List<String> allowed_origin) {
@@ -812,6 +920,30 @@ public class AppProperties {
 
 		public void setAllow_Credentials(Boolean allow_Credentials) {
 			this.allow_Credentials = allow_Credentials;
+		}
+
+		public List<String> getAllowed_headers() {
+			return defaultIfNull(allowed_headers, DEFAULT_ALLOWED_HEADERS);
+		}
+
+		public void setAllowed_headers(List<String> allowed_headers) {
+			this.allowed_headers = allowed_headers;
+		}
+
+		public List<String> getExposed_headers() {
+			return defaultIfNull(exposed_headers, DEFAULT_EXPOSED_HEADERS);
+		}
+
+		public void setExposed_headers(List<String> exposed_headers) {
+			this.exposed_headers = exposed_headers;
+		}
+
+		public List<String> getAllowed_methods() {
+			return defaultIfNull(allowed_methods, DEFAULT_ALLOWED_METHODS);
+		}
+
+		public void setAllowed_methods(List<String> allowed_methods) {
+			this.allowed_methods = allowed_methods;
 		}
 	}
 
@@ -1141,6 +1273,19 @@ public class AppProperties {
 			public void setQuitWait(Boolean quitWait) {
 				this.quitWait = quitWait;
 			}
+		}
+	}
+
+	public static class Elasticsearch {
+
+		private String index_prefix = "";
+
+		public String getIndex_prefix() {
+			return index_prefix;
+		}
+
+		public void setIndex_prefix(String index_prefix) {
+			this.index_prefix = index_prefix;
 		}
 	}
 }
